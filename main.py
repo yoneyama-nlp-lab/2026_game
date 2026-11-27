@@ -8,6 +8,7 @@ import json
 import textwrap
 from datetime import datetime
 
+
 # APIに接続するためのJavaScript（これは変更しないこと）
 platform.window.eval("""
 window.postRequest = function* (url, body, headers) {
@@ -29,7 +30,7 @@ window.postRequest = function* (url, body, headers) {
     yield result;};""")
 
 
-# GPTに接続するためのユーザー定義関数（これは変更しないこと）
+# GPTに接続するためのユーザー定義関数（基本的に変更しない）
 async def GPT(answer_num):
     print('GPT接続開始')
 
@@ -38,6 +39,7 @@ async def GPT(answer_num):
 
     # プロンプト
     role = 'あなたは就職に関する' + str(answer_num) + '択クイズを作成するシステムです。'
+
     prompt = f'''テーマ：就職の面接またはエントリーシートにおける言葉遣い
     ・問題文と解説文は全て全角文字で作成してください。
     ・問題文だけを読んで回答できる内容にしてください。
@@ -46,10 +48,9 @@ async def GPT(answer_num):
     ・正解は必ず1つだけにしてください。
     ・不正解の選択肢は、明らかに不自然なものではなく、もっともらしいものにしてください。
     ・不正解の選択肢に「初心者がやりがちな典型的な勘違いや、一見正しそうに見える誤った概念を含むもの」を含めてください。
-    ・不正解の選択肢に「文脈はあっているが、キーワード（専門用語）だけを関する別の用語にすり替えたもの」または「記述自体は正しいものの、問題の条件を一部満たしてない（説明が不足している）もの」を含めてください。
+    ・不正解の選択肢に「文脈はあっているが、キーワード（専門用語）だけを関連する別の用語にすり替えたもの」または「記述自体は正しいものの、問題の条件を一部満たしていないもの」を含めてください。
     ・解説文は、正解や不正解の理由のみを端的に示してください。
     '''
-
     response = await platform.jsiter(
         platform.window.postRequest(
             'https://script.google.com/macros/s/AKfycbyvexWR3H2PSoRuBQArk8pbZaEqAAUrF1vRy3kpu-ligYwsaVOUeRbRMhAOIzkBulT6bA/exec',
@@ -88,7 +89,12 @@ async def GPT(answer_num):
 
     # OpenAI APIのステータスコードを確認
     if response['status'] == 200:
-        result = json.loads([x for x in json.loads(response['body'])['output'] if x['type']=='message'][0]['content'][0]['text'])
+        result = json.loads(
+            [
+                x for x in json.loads(response['body'])['output']
+                if x['type'] == 'message'
+            ][0]['content'][0]['text']
+        )
         return result
     else:
         return response
@@ -96,224 +102,341 @@ async def GPT(answer_num):
 
 # Pygameの初期化
 pygame.init()
+
 clock = pygame.time.Clock()
 screen = pygame.display.set_mode((600, 600))
-font = pygame.font.Font('fonts-japanese-gothic.ttf', 27)
-# 解説などの長い文章用に少し小さいフォントも用意
-small_font = pygame.font.Font('fonts-japanese-gothic.ttf', 22)
 
-# ボタンの位置と大きさを決める (x座標, y座標, 幅, 高さ)
+font = pygame.font.Font('fonts-japanese-gothic.ttf', 23)
+small_font = pygame.font.Font('fonts-japanese-gothic.ttf', 16)
+
+
+# ボタンの位置と大きさ
 start_rect = pygame.Rect(260, 200, 120, 50)
 how_to_rect = pygame.Rect(260, 320, 120, 50)
 
 
 async def main():
+
     # 選択肢の数
     answer_num = 4
 
-    # 現在どの画面にいるかを管理する変数
-    # 'title' = タイトル, 'quiz' = クイズ画面, 'correct' = 正解画面, 'commentary' = 解説画面, 'how_to' = 遊び方画面
-    game_screen = 'title' # 最初はタイトル
+    # 現在の画面
+    # title = タイトル
+    # quiz = クイズ画面
+    # correct = 正解画面
+    # commentary = 解説画面
+    # how_to = 遊び方画面
+    # game_over = ゲームオーバー画面
+    game_screen = 'title'
 
-    # タスク管理用の初期変数
+    # GPTのタスク管理
     gpt_task = None
+
+    # クイズデータ
     quiz_data = {}
+
+    # 正解番号
     answer_idx = 0
 
     # 全角変換用
-    trans_table = str.maketrans("0123456789", "０１２３４５６７８９")
+    trans_table = str.maketrans(
+        "0123456789",
+        "０１２３４５６７８９"
+    )
 
     # 合計問題数
     total_question_count = 3
-
-    # 問題数カウント
+    # 問題数
     question_count = 0
 
+    # LIFE
+    max_life = 3
+    life = max_life
+
+    # ゲーム開始
     while True:
-        # フリーズ防止のため、毎フレーム必ずイベント（マウスやキーの入力）を取得する
         events = pygame.event.get()
         for event in events:
+
             if event.type == QUIT:
                 pygame.quit()
                 sys.exit()
 
-            # キーボードが押されたときの処理
             elif event.type == KEYDOWN:
-                # --- 1. タイトル画面のキー判定 ---
+
+                # ----------------------------
+                # 1. タイトル画面
+                # ----------------------------
                 if game_screen == 'title':
-                    if event.key == K_1:      # 1で始める
+                    if event.key == K_1:
+
+                        # LIFEを初期化
+                        life = max_life
+
+                        # 問題数を初期化
+                        question_count = 0
+
+                        # クイズデータを初期化
+                        quiz_data = {}
+
+                        # クイズ画面へ
                         game_screen = 'quiz'
-                    elif event.key == K_2:    # 2で遊び方
+
+                    elif event.key == K_2:
+                        # 遊び方画面へ
                         game_screen = 'how_to'
 
-                # --- 2. クイズ画面（quiz）のキー判定 ---
+                # ----------------------------
+                # 2. クイズ画面
+                # ----------------------------
                 elif game_screen == 'quiz' and len(quiz_data) != 0:
                     user_choice = None
-                    if event.key == K_1:      # 1 = 1番目の選択肢
+
+                    if event.key == K_1:
                         user_choice = 0
-                    elif event.key == K_2:    # 2 = 2番目の選択肢
+
+                    elif event.key == K_2:
                         user_choice = 1
-                    elif event.key == K_3:    # 3 = 3番目の選択肢
+
+                    elif event.key == K_3:
                         user_choice = 2
-                    elif event.key == K_4:    # 4 = 4番目の選択肢
+
+                    elif event.key == K_4:
                         user_choice = 3
 
-                    # いずれかのキーが押された場合のみ正誤判定を行う
+                    # 1～4が押された場合のみ判定
                     if user_choice is not None:
+
+                        # 正解の場合
                         if user_choice == answer_idx:
-                            game_screen = 'correct'       # 正解なら correct へ！
-                        else:
-                            game_screen = 'commentary'   # 間違いなら 解説画面 へ！
+                            game_screen = 'correct'
 
-                # --- 3. 解説画面（commentary）のキー判定 ---
+                        # 不正解の場合
+                        else:
+                            # LIFEを1減らす
+                            life -= 1
+
+                            # LIFEが0以下の場合
+                            if life <= 0:
+                                game_screen = 'game_over'
+
+                            # LIFEが残っている場合
+                            else:
+                                game_screen = 'commentary'
+
+                # ----------------------------
+                # 3. 解説画面
+                # ----------------------------
                 elif game_screen == 'commentary':
-                    # W, A, S, D のいずれかが押されたらタイトルに戻る
                     if event.key in [K_1, K_2, K_3, K_4]:
-                        # 問題文リセット
                         quiz_data = {}
+
                         if question_count == total_question_count:
-                            # 全問題終了
                             game_screen = 'title'
+
                         else:
-                            # 次の問題へ
                             game_screen = 'quiz'
 
-                # --- 4. correctのキー判定 ---
+                # ----------------------------
+                # 4. 正解画面
+                # ----------------------------
                 elif game_screen == 'correct':
-                    # W, A, S, D のいずれかが押されたらタイトルに戻る
                     if event.key in [K_1, K_2, K_3, K_4]:
-                        # 問題文リセット
                         quiz_data = {}
+
                         if question_count == total_question_count:
-                            # 全問題終了
                             game_screen = 'title'
                         else:
-                            # 次の問題へ
                             game_screen = 'quiz'
 
-                # --- 5. how_toのキー判定 ---
+                # ----------------------------
+                # 5. 遊び方画面
+                # ----------------------------
                 elif game_screen == 'how_to':
-                    # W, A, S, D のいずれかが押されたらタイトルに戻る
                     if event.key in [K_1, K_2, K_3, K_4]:
                         game_screen = 'title'
 
+                # ----------------------------
+                # 6. ゲームオーバー画面
+                # ----------------------------
+                elif game_screen == 'game_over':
+                    if event.key == K_1:
+
+                        life = max_life
+                        question_count = 0
+                        quiz_data = {}
+                        game_screen = 'title'
+
         # ==================================================
-        # 1. タイトル画面の処理
+        # 1. タイトル画面
         # ==================================================
         if game_screen == 'title':
+            screen.fill((240, 248, 255))
+
             # GPTへの接続タスク
             if gpt_task is None:
                 gpt_task = asyncio.create_task(GPT(answer_num))
 
-            screen.fill((240, 248, 255)) # 背景色（うすい青）
+            # タイトル表示
+            screen.blit(
+                font.render('始める[1]', True, (0, 0, 0)),
+                (start_rect.x, start_rect.y))
 
-            # ボタンの文字を描画
-            screen.blit(font.render('始める[1]', True, (0, 0, 0)), (start_rect.x, start_rect.y))
-            screen.blit(font.render('遊び方[2]', True, (0, 0, 0)), (how_to_rect.x, how_to_rect.y))
-
+            screen.blit(
+                font.render('遊び方[2]', True, (0, 0, 0)),
+                (how_to_rect.x, how_to_rect.y))
 
         # ==================================================
-        # 2. ゲーム画面（quiz：クイズ回答）の処理
+        # 2. クイズ画面
         # ==================================================
+        elif game_screen == 'quiz':
+            screen.fill((200, 255, 200))
 
-        # GPTの処理が終わっていない
-        elif game_screen == 'quiz' and len(quiz_data) == 0 and not gpt_task.done():
-            screen.fill((200, 255, 200)) # 背景色（うすい緑）
-            screen.blit(font.render('問題文読込中...', True, (0, 0, 0)), (60, 320))
-
-        # GPTの処理が完了済
-        elif game_screen == 'quiz' and (len(quiz_data) != 0 or gpt_task.done()):
-            screen.fill((200, 255, 200)) # 背景色（うすい緑）
-
-            # GPTから問題文を取得
+            # GPTの問題取得
             if len(quiz_data) == 0:
-                quiz_data = await gpt_task
+                # GPTの処理が終わっていない場合
+                if gpt_task is None or not gpt_task.done():
 
-                # 問題数カウント
-                question_count += 1
+                    screen.blit(font.render('問題文読込中...',True,(0, 0, 0)),(60, 320))
 
-                # GPTへの接続タスク（次の問題の取得を始める）
-                gpt_task = asyncio.create_task(GPT(answer_num))
+                # GPTの処理が完了した場合
+                else:
+                    quiz_data = await gpt_task
 
-                print(quiz_data) # 確認用にコンソールにGPTからの取得結果を表示
-                answer_idx = quiz_data['answer'] - 1 # リストの最初は0番目
+                    # 問題数をカウント
+                    question_count += 1
 
-            # 問題文の表示
-            y = 40 # 一行目の表示位置
-            question_text = '問' + str(question_count).translate(trans_table) + '：' + quiz_data['question']
-            for textwrap_text in textwrap.wrap(question_text, 18):
-                screen.blit(font.render(textwrap_text, True, (0, 0, 0)), (40, y))
-                # 18文字ごとに改行
+                    # GPTへの次の問題取得を開始
+                    gpt_task = asyncio.create_task(GPT(answer_num))
+
+                    print(quiz_data)
+
+                    # GPTの取得結果を確認
+                    if 'answer' not in quiz_data:
+                        screen.fill((255, 230, 230))
+                        screen.blit(font.render('問題の取得に失敗しました',True,(200, 0, 0)),(50, 250))
+                        screen.blit(font.render('タイトルに戻ってください',True,(0, 0, 0)),(50, 320))
+                        game_screen = 'game_over'
+
+                    else:
+                        # 正解番号を取得
+                        answer_idx = quiz_data['answer'] - 1
+
+            # 問題データがある場合
+            if len(quiz_data) != 0 and 'answer' in quiz_data:
+                # ライフ表示
+                # LIFE表示
+                screen.blit(
+                    font.render(
+                        'ライフ：' + str(life),
+                        True,
+                        (255, 0, 0)
+                    ),
+                    (400, 10)
+                )
+                # 問題文表示
+                y = 40
+
+                question_text = (
+                    '問'
+                    + str(question_count).translate(trans_table)
+                    + '：'
+                    + quiz_data['question']
+                )
+                # 〇文字ごとに改行(問題文)
+                for textwrap_text in textwrap.wrap(question_text, 23):
+                    screen.blit(font.render(textwrap_text,True,(0, 0, 0)),(40, y))
+                    y += font.get_linesize()
                 y += font.get_linesize()
-            # 選択肢の間で1行改行
-            y += font.get_linesize()
 
-            key_guides = [" [1]", " [2]", " [3]", " [4]"]
+                # 選択肢
+                key_guides = [" [1]"," [2]"," [3]"," [4]"]
 
-            # 選択肢の表示（長い場合に備えて少し小さいフォントで表示）
-            y = 200 # 一行目の表示位置
-            for i, s in enumerate(quiz_data["choices"]):
-                choices = str(i+1).translate(trans_table) + '．' + s + key_guides[i]
-                # 改行を考慮した画面描画
-                for textwrap_text in textwrap.wrap(choices, 18):
-                    screen.blit(small_font.render(textwrap_text, True, (0, 0, 0)), (60, y))
-                    # 18文字ごとに改行
+                y = 400
+                for i, s in enumerate(quiz_data["choices"]):
+
+                    choices = (
+                        str(i + 1).translate(trans_table)
+                        + '．'
+                        + s
+                    )
+                    # 〇文字ごとに改行(選択)
+                    for textwrap_text in textwrap.wrap(choices, 30):
+                        screen.blit(small_font.render(textwrap_text,True,(0, 0, 0)),(60, y))
+                        y += small_font.get_linesize()
                     y += small_font.get_linesize()
-                # 選択肢の間で1行改行
-                y += small_font.get_linesize()
 
         # ==================================================
-        # 解説画面（commentary）の処理
+        # 3. 解説画面
         # ==================================================
         elif game_screen == 'commentary':
-            screen.fill((255, 230, 230)) # 背景色（うすい赤・ピンク）
+            screen.fill((255, 230, 230))
+            # メッセージ
+            screen.blit(font.render('残念！不正解...',True,(200, 0, 0)),(150, 50))
+            # LIFE表示
+            screen.blit(font.render('残りライフ：' + str(life),True,(255, 0, 0)),(200, 100))
+            screen.blit(font.render('【解説】', True, (0, 0, 0)),(50, 150))
 
-            # メッセージと解説文の表示
-            screen.blit(font.render('残念！不正解...', True, (200, 0, 0)), (150, 50))
-            screen.blit(font.render('【解説】', True, (0, 0, 0)), (50, 150))
+            # 解説文
+            y = 210
 
-            # 解説テキスト（長い場合に備えて少し小さいフォントで表示）
-            y = 240 # 一行目の表示位置
             for i, s in enumerate(quiz_data["explanation"]):
                 if i == answer_idx:
                     result_str = '正解。'
                 else:
                     result_str = '不正解。'
-                explanation = str(i+1).translate(trans_table) + '．' + result_str + s
-                # 改行を考慮した画面描画
-                for textwrap_text in textwrap.wrap(explanation, 20):
-                    screen.blit(small_font.render(textwrap_text, True, (0, 0, 0)), (50, y))
-                    # 20文字ごとに改行
+
+                explanation = (
+                    str(i + 1).translate(trans_table)
+                    + '．'
+                    + result_str
+                    + s
+                )
+                # 〇文字ごとに改行(解説)
+                for textwrap_text in textwrap.wrap(explanation, 30):
+                    screen.blit(small_font.render(textwrap_text,True,(0, 0, 0)),(50, y))
                     y += small_font.get_linesize()
-                # 選択肢の間で1行改行
                 y += small_font.get_linesize()
 
-            # 案内メッセージをキーボード用に変更
-            screen.blit(font.render('【1,2,3,4のどれかで次へ】', True, (100, 100, 100)), (100, 530))
+            screen.blit(font.render('【1,2,3,4のどれかで次へ】',True,(100, 100, 100)),(100, 530))
 
         # ==================================================
-        # 正解画面（correct）の処理
+        # 4. 正解画面
         # ==================================================
         elif game_screen == 'correct':
-            screen.fill((255, 255, 200)) # 背景色（うすい黄色）
-
-            screen.blit(font.render('正解画面', True, (0, 128, 0)), (250, 30))
-            # 案内メッセージをキーボード用に変更
-            screen.blit(font.render('【1,2,3,4のどれかで次へ】', True, (100, 100, 100)), (110, 400))
+            screen.fill((255, 255, 200))
+            screen.blit(font.render('正解！',True,(0, 128, 0)),(250, 150))
+            screen.blit(font.render('ライフ：' + str(life),True,(255, 0, 0)),(230, 220))
+            screen.blit(font.render('【1,2,3,4のどれかで次へ】',True,(100, 100, 100)),(110, 400))
 
         # ==================================================
-        # 3. 遊び方画面（how_to）の処理
+        # 5. 遊び方画面
         # ==================================================
         elif game_screen == 'how_to':
-            screen.fill((230, 230, 230)) # 背景色（うすい灰色）
-            screen.blit(font.render('ここは遊び方の説明画面です！', True, (0, 0, 0)), (50, 200))
-            # 案内メッセージをキーボード用に変更
-            screen.blit(font.render('【1,2,3,4のどれかでタイトルへ】', True, (100, 100, 100)), (50, 400))
+            screen.fill((230, 230, 230))
+            screen.blit(font.render('ここは遊び方の説明画面です！',True,(0, 0, 0)),(50, 200))
+            screen.blit(small_font.render('数字の1～4で回答してください。',True,(0, 0, 0)),(50, 280))
+            screen.blit(small_font.render('不正解になるとLIFEが1減ります。',True,(0, 0, 0)),(50, 330))
+            screen.blit(small_font.render('LIFEが0になるとゲームオーバーです。',True,(0, 0, 0)),(50, 380))
+            screen.blit(font.render('【1,2,3,4のどれかでタイトルへ】',True,(100, 100, 100)),(50, 450))
 
-        # 画面を実際に更新する
+        # ==================================================
+        # 6. ゲームオーバー画面
+        # ==================================================
+        elif game_screen == 'game_over':
+            screen.fill((50, 50, 50))
+
+            screen.blit(font.render('GAME OVER',True,(255, 0, 0)),(200, 200))
+            screen.blit(font.render('ライフがなくなりました',True,(255, 255, 255)),(120, 280))
+            screen.blit(font.render('【1でタイトルへ戻る】',True,(255, 255, 255)),(130, 400))
+
+        # ==================================================
+        # 画面更新
+        # ==================================================
         pygame.display.update()
         clock.tick(30)
         await asyncio.sleep(0)
+
 
 # ゲームの実行
 asyncio.run(main())
