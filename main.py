@@ -7,6 +7,7 @@ import platform
 import json
 import textwrap
 from datetime import datetime
+from random import randrange
 
 
 # APIに接続するためのJavaScript（これは変更しないこと）
@@ -153,6 +154,9 @@ async def main():
     max_life = 3
     life = max_life
 
+    # 画像ファイル名
+    img_filename = str(randrange(1, 4)) + ".png"
+
     # ゲーム開始
     while True:
         events = pygame.event.get()
@@ -230,6 +234,8 @@ async def main():
                 elif game_screen == 'commentary':
                     if event.key in [K_1, K_2, K_3, K_4]:
                         quiz_data = {}
+                        # 画像ファイル名
+                        img_filename = str(randrange(1, 4)) + ".png"
 
                         if question_count == total_question_count:
                             game_screen = 'title'
@@ -243,6 +249,8 @@ async def main():
                 elif game_screen == 'correct':
                     if event.key in [K_1, K_2, K_3, K_4]:
                         quiz_data = {}
+                        # 画像ファイル名
+                        img_filename = str(randrange(1, 4)) + ".png"
 
                         if question_count == total_question_count:
                             game_screen = 'title'
@@ -348,6 +356,14 @@ async def main():
                     screen.blit(font.render(textwrap_text,True,(0, 0, 0)),(40, y))
                     y += font.get_linesize()
                 y += font.get_linesize()
+
+                img_size = 600 - 200 - y - 10 # y：問題文, 200：選択肢, 10：画像と選択肢の下の隙間
+                img = pygame.image.load(img_filename)
+                img = pygame.transform.scale(img, (img_size, img_size))
+
+                rect = img.get_rect(midtop=(screen.get_width() // 2, y))
+                screen.blit(img, rect)
+
 
                 # 選択肢
                 key_guides = [" [1]"," [2]"," [3]"," [4]"]
